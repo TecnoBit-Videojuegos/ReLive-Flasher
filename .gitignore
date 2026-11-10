@@ -1,0 +1,15 @@
+# build output
+.build-venv/
+.build-work/
+.build-dist/
+.build-log.txt
+dist/
+*.spec
+__pycache__/
+*.pyc
+.venv/
+
+# data created when you run the program from this folder (not part of the source code)
+config.json
+firmware/
+_backup/

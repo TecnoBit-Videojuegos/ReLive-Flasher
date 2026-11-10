@@ -1,0 +1,10 @@
+# One folder per console is created inside firmware/ in every download, and the three base files
+# from base-files/ are copied into it. To add a console, add a line here and push.
+#
+# The name must match the folder name the program expects. The firmware update check looks for
+# a published file called ReLiveBT_<NAME>.bin (GameCube also accepts ReLiveBT_GC.bin).
+GameCube
+N64
+PS1
+PS2
+SNES

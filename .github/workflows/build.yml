@@ -1,0 +1,133 @@
+name: Build and release
+
+# Every push to main that changes the program (not just the README or screenshots) builds the
+# Windows and Linux packages and publishes them as a new numbered release (v1.0.1, v1.0.2, ...).
+# The previous release is deleted, so the Releases page always shows only the latest version.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relive_flasher.py"
+      - "build.py"
+      - "build.sh"
+      - "build.bat"
+      - "requirements.txt"
+      - "consoles.txt"
+      - "base-files/**"
+      - "assets/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:        # also lets you start a build by hand from the Actions tab
+
+permissions:
+  contents: write           # needed to create and delete releases
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false  # two quick pushes are processed one after the other
+
+jobs:
+  version:
+    name: Next version number
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' \
+                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          if [ -z "$prev" ]; then
+            tag="v1.0.1"
+          else
+            IFS=. read -r major minor patch <<< "${prev#v}"
+            tag="v${major}.${minor}.$((patch + 1))"
+          fi
+          echo "Previous release: ${prev:-none}  ->  new release: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: linux,   os: ubuntu-24.04, py: python3 }
+          - { name: windows, os: windows-2025, py: python }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tk and venv (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk python3-venv
+
+      - name: Set up Python (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build the program and package it
+        run: ${{ matrix.py }} build.py --package --version "${{ needs.version.outputs.tag }}"
+
+      - name: Keep the package for the release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.name }}
+          path: |
+            dist/ReLive-Flasher-*.zip
+            dist/ReLive-Flasher-*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish release
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create the new release and delete the previous one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          ls -l dist
+          {
+            echo "## Downloads"
+            echo
+            echo "- **Windows:** \`ReLive-Flasher-windows-x64.zip\` - extract it and run \`ReLive-Flasher.exe\`"
+            echo "- **Linux (x86-64):** \`ReLive-Flasher-linux-x64.tar.gz\` - extract it and run \`./ReLive-Flasher\`"
+            echo
+            echo "## Changes in this version"
+            echo
+            printf '%s\n' "${COMMIT_MSG:-Manual build}"
+          } > notes.md
+
+          old=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ReLive Flasher $TAG" \
+            --notes-file notes.md \
+            --latest
+
+          for t in $old; do
+            if [ "$t" != "$TAG" ]; then
+              echo "Deleting previous release $t"
+              gh release delete "$t" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            fi
+          done
