@@ -2,3 +2,4 @@
 # el programa usa la sintaxis de esptool 5 (write-flash, chip-id) y con la 4.x no funciona.
 esptool==5.6.0
 pyserial==3.5
+Pillow
