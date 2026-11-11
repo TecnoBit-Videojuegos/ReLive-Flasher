@@ -105,7 +105,7 @@ def main():
         png = os.path.join(ROOT, "assets", "icon.png")
         if os.path.isfile(png):
             ico = os.path.join(work, "icon.ico")
-            make_ico(png, ico)
+            run([sys.executable, "-m", "pip", "install", "--quiet", "pillow"]); make_ico(png, ico)
             cmd += ["--icon", ico]
     cmd.append(os.path.join(ROOT, "relive_flasher.py"))
     log = os.path.join(ROOT, ".build-log.txt")
