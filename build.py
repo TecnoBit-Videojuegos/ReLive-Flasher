@@ -176,7 +176,7 @@ def main():
                 t.add(OUT, arcname=APP)                  # conserva el permiso de ejecución
         print("     ", os.path.relpath(archive, ROOT))
 
-    print(f"\nListo ✔  Programa en:  {os.path.relpath(os.path.join(OUT, EXE), ROOT)}")
+    print(f"\nListo OK Programa en:  {os.path.relpath(os.path.join(OUT, EXE), ROOT)}")
 
 
 if __name__ == "__main__":
