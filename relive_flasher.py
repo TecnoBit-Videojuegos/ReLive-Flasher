@@ -80,17 +80,23 @@ BAUDS = ["115200", "230400", "460800", "921600"]
 KNOWN_VIDS = {0x1A86, 0x10C4, 0x0403}  # CH340/CH9102, CP210x, FTDI
 
 # --- paleta
-BG = "#0e1116"
-CARD = "#161b22"
-CARD2 = "#1f2631"
-BORDER = "#2a313c"
-TRACK = "#252b36"
-TEXT = "#e6edf3"
-MUTED = "#8b949e"
-ACCENT = "#4f8cff"
+BG = "#08111f"
+CARD = "#0d1827"
+CARD2 = "#1a2433"
+BORDER = "#22344f"
+TRACK = "#18222f"
+TEXT = "#f2f6fb"
+MUTED = "#9fb0c6"
+ACCENT = "#2272fa"
 GREEN = "#22c55e"
 RED = "#ef4444"
-AMBER = "#f59e0b"
+AMBER = "#f5b50a"
+ACCENT_L = "#3aa8ff"     # azul claro (título del bloque de archivos)
+CYAN = "#3de0ff"         # líneas y subrayados de acento
+SEP = "#1b2a40"          # separadores finos
+BTN_BORDER = "#263347"   # borde de los botones de consola
+TXT2 = "#dfe8f5"         # texto secundario brillante
+GLOW = "#1d4f9e"         # resplandor del encabezado
 
 ROLE_LABELS = {"bootloader": "Bootloader", "partition": "Tabla de particiones",
                "ota": "OTA data", "app": "Aplicación"}
@@ -534,6 +540,14 @@ def shade(color, amount):
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def mix(c1, c2, t):
+    """Mezcla dos colores #rrggbb (t=0 -> c1, t=1 -> c2)."""
+    t = max(0.0, min(1.0, t))
+    a, b = c1.lstrip("#"), c2.lstrip("#")
+    return "#%02x%02x%02x" % tuple(int(int(a[i:i + 2], 16) * (1 - t) + int(b[i:i + 2], 16) * t)
+                                   for i in (0, 2, 4))
+
+
 def rrect(canvas, x1, y1, x2, y2, r, **kw):
     r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
     pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
@@ -558,13 +572,15 @@ class RButton(tk.Canvas):
     BADGE_R = 11
 
     def __init__(self, master, text, command=None, bg=ACCENT, fg="#ffffff", font=(SANS, 14, "bold"),
-                 height=52, radius=12, sub="", parent=BG, subfont=(SANS, 9), border=None, width=10):
+                 height=52, radius=12, sub="", parent=BG, subfont=(SANS, 9), border=None, width=10,
+                 subline=None, underline=None):
         super().__init__(master, width=width, height=height, bg=parent, highlightthickness=0, bd=0,
                          cursor="hand2")
         self.command, self.text, self.sub = command, text, sub
         self.bgc, self.fg, self.font, self.subfont = bg, fg, font, subfont
         self.radius, self.border, self.min_h = radius, border, height
         self.subfg = None
+        self.subline, self.underline = subline, underline
         self.enabled, self.hover = True, False
         self.badge, self.badge_cmd, self.badge_tip = False, None, ""
         self._tip = None
@@ -663,9 +679,12 @@ class RButton(tk.Canvas):
             return
         color = shade(self.bgc, 0.12) if (self.hover and self.enabled) else self.bgc
         if self.border:
-            rrect(self, 1, 1, w - 1, h - 1, self.radius, fill=color, outline=self.border, width=2)
+            rrect(self, 1, 1, w - 1, h - 1, self.radius, fill=color, outline=self.border, width=1)
         else:
             rrect(self, 0, 0, w, h, self.radius, fill=color)
+        if self.underline:
+            ins = max(8, self.radius * 0.8)
+            self.create_line(ins, h - 2, w - ins, h - 2, fill=self.underline, width=3)
         top = (h - self._block()) / 2
         main_h = lh(self.font)
         pad = 56 if self.badge else 20   # margen a los lados (más si hay insignia)
@@ -675,17 +694,24 @@ class RButton(tk.Canvas):
             sub_font = self._fit_font(self.sub, self.subfont, w - pad)
             self.create_text(w / 2, top + main_h + self.GAP + lh(self.subfont) / 2, text=self.sub,
                              fill=self.subfg or self.fg, font=sub_font)
+            if self.subline and self.sub.strip():
+                sw = tkfont.Font(font=sub_font).measure(self.sub)
+                y = top + main_h + self.GAP + lh(self.subfont) / 2
+                ln = min(120, (w - sw) / 2 - 40)
+                if ln > 10:
+                    for sgn in (-1, 1):
+                        x0 = w / 2 + sgn * (sw / 2 + 14)
+                        self.create_line(x0, y, x0 + sgn * ln, y, fill=self.subline, width=1)
         if self.badge:
             cx, cy, r = w - 18, 18, self.BADGE_R
             self.create_oval(cx - r, cy - r, cx + r, cy + r, fill=AMBER, outline=BG, width=2)
-            self.create_polygon(cx, cy - 6, cx - 6, cy, cx - 2.5, cy, cx - 2.5, cy + 6,
-                                cx + 2.5, cy + 6, cx + 2.5, cy, cx + 6, cy, fill="#1a1200", outline="")
+            self.create_text(cx, cy, text="!", fill="#1a1200", font=(SANS, 11, "bold"))
 
 
 class Banner(tk.Canvas):
     """Cartel de estado. Mientras programa se va coloreando de izquierda a derecha."""
     R = 16
-    MAIN = (SANS, 28, "bold")
+    MAIN = (SANS, 30, "bold")
     SUB = (SANS, 11)
     GAP = 6
 
@@ -724,7 +750,8 @@ class Banner(tk.Canvas):
         w, h = self.winfo_width(), self.winfo_height()
         if w < 4:
             return
-        rrect(self, 0, 0, w, h, self.R, fill=self.track)
+        rrect(self, 1, 1, w - 1, h - 1, self.R, fill=self.track,
+              outline=BTN_BORDER if self.track == TRACK else self.track, width=1)
         if self.fill and self.shown > 0.001:
             fw = max(w * self.shown, 4)
             rrect(self, 0, 0, fw, h, self.R, fill=self.fill)
@@ -756,9 +783,76 @@ class Switch(tk.Canvas):
 
     def draw(self):
         self.delete("all")
-        rrect(self, 1, 2, 49, 26, 12, fill=GREEN if self.on else "#3a4150")
+        rrect(self, 1, 2, 49, 26, 12, fill=ACCENT if self.on else "#2a3650")
         x = 36 if self.on else 14
         self.create_oval(x - 10, 4, x + 10, 24, fill="#ffffff", outline="")
+
+
+class Header(tk.Canvas):
+    """Encabezado: título, subtítulo y un fondo suave (franjas diagonales + resplandor)."""
+    def __init__(self, master):
+        self.tf = (SANS, 44, "bold italic")
+        self.sf = (SANS, 11, "bold")
+        super().__init__(master, height=lh(self.tf) + lh(self.sf) + 40, bg=BG, highlightthickness=0, bd=0)
+        self.bind("<Configure>", lambda e: self.draw())
+
+    def draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        for i in range(10, 0, -1):                       # resplandor
+            t = i / 10
+            rx, ry = w * 0.42 * t, h * 0.9 * t
+            self.create_oval(w / 2 - rx, h * 0.35 - ry, w / 2 + rx, h * 0.35 + ry,
+                             fill=mix(BG, GLOW, 0.05 + (1 - t) * 0.5), outline="")
+        x0 = int(w * 0.40)                               # franjas que se desvanecen hacia la izquierda
+        for x in range(x0, int(w + h), 22):
+            frac = (x - x0) / max(w * 0.6, 1)
+            self.create_line(x, 0, x - h * 0.5, h, fill=mix(BG, "#2c5fa8", 0.30 * min(frac, 1)), width=2)
+        size = 44
+        while size > 20 and tkfont.Font(font=(SANS, size, "bold italic")).measure(APP_NAME) > w * 0.72:
+            size -= 2
+        tf = (SANS, size, "bold italic")
+        block = lh(tf) + 10 + lh(self.sf)
+        top = (h - block) / 2
+        self.create_text(w / 2, top + lh(tf) / 2, text=APP_NAME, fill=TEXT, font=tf)
+        sub = "   ".join(" ".join(word) for word in APP_SUB.upper().split())
+        y = top + lh(tf) + 10 + lh(self.sf) / 2
+        self.create_text(w / 2, y, text=sub, fill=TEXT, font=self.sf)
+        sw = tkfont.Font(font=self.sf).measure(sub)
+        for sgn in (-1, 1):
+            xa = w / 2 + sgn * (sw / 2 + 16)
+            self.create_line(xa, y, xa + sgn * 70, y, fill="#2a7fd8", width=1)
+
+
+class SectionLabel(tk.Canvas):
+    """Rótulo de sección con subrayado de acento y una línea fina que sigue hasta el borde."""
+    def __init__(self, master, text):
+        self.text, self.font = text, (SANS, 10, "bold")
+        super().__init__(master, height=lh(self.font) + 10, bg=BG, highlightthickness=0, bd=0)
+        self.bind("<Configure>", lambda e: self.draw())
+
+    def draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        tw = tkfont.Font(font=self.font).measure(self.text)
+        self.create_text(4, h - 6, text=self.text, fill=TEXT, font=self.font, anchor="sw")
+        self.create_line(tw + 20, h - 1, w, h - 1, fill="#1d3a63", width=1)
+        self.create_line(0, h - 2, tw + 20, h - 2, fill="#2a7fd8", width=2)
+
+
+class HexChip(tk.Canvas):
+    """Etiqueta hexagonal para las direcciones (0x1000, 0x8000...)."""
+    def __init__(self, master, text, parent=CARD):
+        f = (MONO, 11, "bold")
+        w = max(84, tkfont.Font(font=f).measure(text) + 36)
+        super().__init__(master, width=w, height=28, bg=parent, highlightthickness=0, bd=0)
+        k = 9
+        self.create_polygon(k, 1, w - k, 1, w - 1, 14, w - k, 27, k, 27, 1, 14, fill="#12356b", outline="")
+        self.create_text(w / 2, 14, text=text, fill="#8ccbff", font=f)
 
 
 class UpdateDialog(tk.Toplevel):
@@ -940,24 +1034,19 @@ class App:
         if self.cfg["auto"]:
             self.switch.set(True)
             self.toggle_auto(True)
+        self.root.update_idletasks()
+        self.root.deiconify()      # se muestra ya con su tamaño y posición finales (sin saltos)
         if self.need_cal:
             self.root.after(250, self.calibrate)
 
     # ---- construcción de la interfaz
     def build_ui(self):
         pad = 22
-        head = tk.Frame(self.root, bg=BG)
-        head.pack(fill="x", padx=pad, pady=(18, 4))
-        head.columnconfigure(0, weight=1, uniform="hd")
-        head.columnconfigure(1, weight=0)
-        head.columnconfigure(2, weight=1, uniform="hd")
-        titles = tk.Frame(head, bg=BG)
-        titles.grid(row=0, column=1)
-        tk.Label(titles, text=APP_NAME, font=(SANS, 26, "bold"), fg=TEXT, bg=BG).pack()
-        tk.Label(titles, text=APP_SUB.upper(), font=(SANS, 10, "bold"), fg=ACCENT, bg=BG).pack()
-
-        tk.Label(self.root, text="CONSOLA", font=(SANS, 9, "bold"), fg=MUTED, bg=BG).pack(
-            anchor="w", padx=pad + 2, pady=(14, 2))
+        self.glow = tk.Canvas(self.root, height=4, bg=BG, highlightthickness=0, bd=0)
+        self.glow.pack(side="bottom", fill="x")          # barra de brillo al pie de la ventana
+        self.glow.bind("<Configure>", self._draw_glow)
+        Header(self.root).pack(fill="x")
+        SectionLabel(self.root, "CONSOLA").pack(fill="x", padx=pad, pady=(6, 6))
         self.cons_frame = tk.Frame(self.root, bg=BG)
         self.cons_frame.pack(fill="x", padx=pad - 4)
 
@@ -965,76 +1054,85 @@ class App:
         self.card = tk.Frame(self.root, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
         self.card.pack(fill="x", padx=pad, pady=(12, 6))
         ch = tk.Frame(self.card, bg=CARD)
-        ch.pack(fill="x", padx=16, pady=(12, 4))
-        tk.Label(ch, text="ARCHIVOS A GRABAR", font=(SANS, 10, "bold"), fg=MUTED, bg=CARD).pack(side="left")
-        self.card_title = tk.Label(ch, text=" ", font=(SANS, 14, "bold"), fg=ACCENT, bg=CARD)
+        ch.pack(fill="x", padx=16, pady=(12, 6))
+        folder = tk.Canvas(ch, width=24, height=18, bg=CARD, highlightthickness=0, bd=0)
+        folder.create_polygon(1, 3, 8, 3, 10, 6, 22, 6, 22, 17, 1, 17, fill=ACCENT_L, outline="")
+        folder.pack(side="left", padx=(0, 8))
+        tk.Label(ch, text="ARCHIVOS A GRABAR", font=(SANS, 11, "bold"), fg=TEXT, bg=CARD).pack(side="left")
+        self.card_title = tk.Label(ch, text=" ", font=(SANS, 15, "bold"), fg=ACCENT_L, bg=CARD)
         self.card_title.pack(side="right")
         self.rows_frame = tk.Frame(self.card, bg=CARD)
         self.rows_frame.pack(fill="x", padx=16, pady=(0, 12))
         # altura de una fila = la de su celda más alta (se mide con etiquetas reales para que no varíe)
         cells = [("✔✘–", {"font": (SANS, 13, "bold")}, 10), ("Xg", {"font": (SANS, 12)}, 0),
-                 ("0x10000", {"font": (MONO, 12, "bold"), "padx": 4, "pady": 2}, 0),
                  ("Xg", {"font": (SANS, 13, "bold")}, 0), ("999 KB", {"font": (SANS, 11)}, 0)]
-        row_h = 0
+        row_h = 30                                     # alto del chip hexagonal
         for text, kw, extra in cells:
             probe = tk.Label(self.rows_frame, text=text, **kw)
             row_h = max(row_h, probe.winfo_reqheight() + extra)
             probe.destroy()
-        for i in range(len(ROLE_ORDER)):       # siempre 4 filas de alto, haya o no archivos
-            self.rows_frame.rowconfigure(i, minsize=row_h)
+        self.row_h = row_h + 6
+        self.rows_frame.pack_propagate(False)          # siempre 4 filas de alto, haya o no archivos
+        self.rows_frame.config(height=len(ROLE_ORDER) * (self.row_h + 1))
         self.warn_lbl = tk.Label(self.card, text="", font=(SANS, 10), fg=AMBER, bg=CARD,
                                  wraplength=660, justify="left", anchor="nw", height=2)
         self.warn_lbl.pack(fill="x", padx=16, pady=(0, 10))      # 2 líneas reservadas siempre
 
-        self.prog = RButton(self.root, "PROGRAMAR", self.start_manual, bg=ACCENT, font=(SANS, 24, "bold"),
-                            height=78, radius=16, sub=" ", parent=BG, subfont=(SANS, 11, "bold"))   # sub=" " reserva la 2ª línea
+        self.prog = RButton(self.root, "PROGRAMAR", self.start_manual, bg=ACCENT, font=(SANS, 26, "bold italic"),
+                            height=78, radius=16, sub=" ", parent=BG, subfont=(SANS, 12, "bold"),
+                            subline=CYAN)   # sub=" " reserva la 2ª línea
         self.prog.pack(fill="x", padx=pad, pady=(8, 8))
 
         self.banner = Banner(self.root)
         self.banner.pack(fill="x", padx=pad, pady=(0, 6))
 
-        foot = tk.Frame(self.root, bg=BG)
-        foot.pack(fill="x", padx=pad, pady=(6, 2))
+        bar = tk.Frame(self.root, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        bar.pack(fill="x", padx=pad, pady=(6, 2))
+        inner = tk.Frame(bar, bg=CARD)
+        inner.pack(fill="x", padx=16, pady=8)
 
-        # Lado izquierdo: Contador de PCBs
-        self.count_lbl = tk.Label(foot, text=" ", font=(SANS, 11), fg=MUTED, bg=BG)
-        self.count_lbl.pack(side="left", anchor="n")
+        self.count_lbl = tk.Label(inner, text=" ", font=(SANS, 11), fg=TEXT, bg=CARD)
+        self.count_lbl.pack(side="left")
+        self.ctrls = tk.Frame(inner, bg=CARD)
+        self.ctrls.pack(side="right")
 
-        # Lado derecho: Controles y crédito agrupados en columna
-        right_col = tk.Frame(foot, bg=BG)
-        right_col.pack(side="right")
-
-        # Fila superior de controles
-        ctrls = tk.Frame(right_col, bg=BG)
-        ctrls.pack(anchor="e")
-
-        self.switch = Switch(ctrls, self.toggle_auto)
+        self.switch = Switch(self.ctrls, self.toggle_auto, parent=CARD)
         self.switch.pack(side="right")
-        tk.Label(ctrls, text="Modo automático", font=(SANS, 11), fg=TEXT, bg=BG).pack(side="right", padx=(0, 8))
+        tk.Label(self.ctrls, text="Modo automático", font=(SANS, 11), fg=TEXT, bg=CARD).pack(side="right", padx=(0, 8))
+        tk.Frame(self.ctrls, bg=BORDER, width=1, height=26).pack(side="right", padx=16)
 
         self.baud_var = tk.StringVar(value=self.cfg["baud"])
-        om = tk.OptionMenu(ctrls, self.baud_var, *BAUDS, command=lambda v: self.save())
-        om.config(bg=CARD2, fg=TEXT, activebackground=CARD2, activeforeground=TEXT, highlightthickness=0,
-                  bd=0, font=(SANS, 10), relief="flat", width=7)
+        om = tk.OptionMenu(self.ctrls, self.baud_var, *BAUDS, command=lambda v: self.save())
+        om.config(bg="#0a121e", fg=TEXT, activebackground="#0a121e", activeforeground=TEXT, highlightthickness=1,
+                  highlightbackground="#2a3b55", bd=0, font=(SANS, 10), relief="flat", width=7)
         om["menu"].config(bg=CARD2, fg=TEXT, activebackground=ACCENT, activeforeground="#ffffff", bd=0)
-        om.pack(side="right", padx=(0, 28))
-        tk.Label(ctrls, text="Velocidad", font=(SANS, 11), fg=MUTED, bg=BG).pack(side="right", padx=(0, 8))
-
-        # Fila inferior: Texto discreto exactamente debajo del bloque derecho
-        tk.Label(right_col, text="© 2026 TecnoBit_Videojuegos", font=(SANS, 9), fg="#484f58", bg=BG).pack(anchor="e", pady=(2, 0))
+        om.pack(side="right")
+        tk.Label(self.ctrls, text="Velocidad", font=(SANS, 11), fg=TEXT, bg=CARD).pack(side="right", padx=(0, 8))
+        tk.Frame(self.ctrls, bg=BORDER, width=1, height=26).pack(side="right", padx=16)
 
         logrow = tk.Frame(self.root, bg=BG)
-        logrow.pack(fill="x", padx=pad, pady=(6, 14))
-        self.log_toggle = tk.Label(logrow, text="▸ Mostrar registro", font=(SANS, 10), fg=MUTED,
+        logrow.pack(fill="x", padx=pad, pady=(6, 0))
+        logrow.columnconfigure(1, weight=1)
+        self.log_toggle = tk.Label(logrow, text="▸ Mostrar registro", font=(SANS, 10), fg=TXT2,
                                    bg=BG, cursor="hand2")
-        self.log_toggle.pack(side="left")
+        self.log_toggle.grid(row=0, column=0, sticky="w")
         self.upd_lbl = tk.Label(logrow, text="", font=(SANS, 10), fg=MUTED, bg=BG)
-        self.upd_lbl.pack(side="right")
+        self.upd_lbl.grid(row=0, column=1, sticky="e")
+        tk.Label(self.root, text="© 2026 TecnoBit_Videojuegos", font=(SANS, 9), fg="#6b7a90",
+                 bg=BG).pack(pady=(4, 10))
         self.log_toggle.bind("<Button-1>", lambda e: self.show_log(not self.log_visible))
         self.log_frame = tk.Frame(self.root, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
         self.log = tk.Text(self.log_frame, height=7, state="disabled", font=(MONO, 9), bg=CARD, fg=MUTED,
                            bd=0, highlightthickness=0, insertbackground=TEXT)
         self.log.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def _draw_glow(self, _e=None):
+        c, w = self.glow, self.glow.winfo_width()
+        c.delete("all")
+        for x in range(0, w, 3):
+            t = x / max(w, 1)
+            col = mix(ACCENT, CYAN, t / 0.4) if t < 0.4 else mix(CYAN, BG, (t - 0.4) / 0.35)
+            c.create_line(x, 0, x, 4, fill=col, width=3)
 
     def show_log(self, visible):
         """Abre/cierra el registro: solo cambia la ALTURA (suma o resta lo que mide el registro).
@@ -1158,7 +1256,7 @@ class App:
         self.root.update_idletasks()
         sc = self.root.winfo_fpixels("1i") / 96.0                # 1.0 a 100 %, 1.5 a 150 %
         sc = 1.0 if sc < 1.2 else round(sc * 4) / 4              # solo se escala en pantallas de alta resolución
-        w = min(int(1000 * sc), max(int(760 * sc), self.root.winfo_reqwidth()))
+        w = max(min(int(1000 * sc), max(int(760 * sc), self.root.winfo_reqwidth())), self.needed_width())
         h = self.root.winfo_reqheight()
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         x, y = max(0, (sw - w) // 2), max(0, (sh - h) // 3)
@@ -1166,6 +1264,24 @@ class App:
         self.root.minsize(w, h)
         self.root.geometry(f"{w}x{h}+{max(0, x + self._off[0])}+{max(0, y + self._off[1])}")
         self.sized = True
+
+    def needed_width(self):
+        """Ancho mínimo para que ningún texto se monte, pensando en el peor caso (la consola con el nombre
+        más largo y el mensaje de actualización más largo), medido con las fuentes reales de este equipo."""
+        names = scan_consoles() or [""]
+
+        def fm(font, text):
+            return tkfont.Font(font=font).measure(text)
+
+        cnt = max(fm((SANS, 11), f"{n} · 99999 PCBs programadas") for n in names)
+        bar = cnt + self.ctrls.winfo_reqwidth() + 48
+        texts = ["No hay firmwares ReLiveBT_*.bin publicados", "Lo publicado no coincide con ninguna de tus carpetas",
+                 "⚠ Límite de consultas de GitHub alcanzado", "Buscando actualizaciones…"]
+        for n in names:
+            texts += [f"⬆ Actualización disponible para {n}", f"⬆ {n}: hay firmware publicado para descargar",
+                      f"{n}: sin firmware publicado en GitHub", f"✔ {n} al día"]
+        log = fm((SANS, 10), "▾ Ocultar registro") + max(fm((SANS, 10), t) for t in texts) + 48
+        return max(bar, log) + 2 * 22 + 4
 
     def ensure_fits(self):
         """Red de seguridad: solo crece (en alto, sin mover la ventana) si el contenido de verdad no cabe,
@@ -1274,7 +1390,7 @@ class App:
         if st == "checking":
             text, color = "Buscando actualizaciones…", MUTED
         elif st != "ok":
-            text, color = f"No se pudo buscar actualizaciones: {st[1]}", AMBER
+            text, color = f"⚠ {st[1][:1].upper() + st[1][1:]}", AMBER
         elif not self.remote:
             text, color = "No hay firmwares ReLiveBT_*.bin publicados", AMBER
         elif c:
@@ -1320,11 +1436,11 @@ class App:
     def refresh_view(self, reset_status=True):
         for name, (b, ready) in self.cbtns.items():
             if name == self.console:
-                b.look(bgc=ACCENT, fg="#ffffff", subfg="#dbe7ff", border=None)
+                b.look(bgc=ACCENT, fg="#ffffff", subfg="#dbe7ff", border=None, underline=CYAN)
             elif ready:
-                b.look(bgc=CARD2, fg=TEXT, subfg=MUTED, border=None)
+                b.look(bgc="#182131", fg=TXT2, subfg=MUTED, border=BTN_BORDER, underline=None)
             else:
-                b.look(bgc=CARD, fg="#5b6472", subfg="#5b6472", border=None)
+                b.look(bgc="#141c29", fg="#8fa0b8", subfg="#8fa0b8", border=BTN_BORDER, underline=None)
         self.apply_badges()
 
         for w in self.rows_frame.winfo_children():
@@ -1333,27 +1449,30 @@ class App:
         if self.console:
             r = resolve(self.console)
             self.card_title.config(text=self.console)
-            self.rows_frame.columnconfigure(3, weight=1)
             for i, role in enumerate(ROLE_ORDER):
                 f = r["files"].get(role)
-                need = role != "ota" or "ota" in r["files"]
                 mark, mcolor = ("✔", GREEN) if f else (("✘", RED) if role != "ota" else ("–", MUTED))
-                tk.Label(self.rows_frame, text=mark, font=(SANS, 13, "bold"), fg=mcolor, bg=CARD,
-                         width=2).grid(row=i, column=0, pady=5)
-                tk.Label(self.rows_frame, text=ROLE_LABELS[role], font=(SANS, 12), fg=MUTED, bg=CARD,
-                         width=19, anchor="w").grid(row=i, column=1, sticky="w")
+                tk.Frame(self.rows_frame, bg=SEP, height=1).pack(fill="x")
+                row = tk.Frame(self.rows_frame, bg=CARD, height=self.row_h)
+                row.pack(fill="x")
+                row.grid_propagate(False)
+                row.rowconfigure(0, weight=1)
+                row.columnconfigure(3, weight=1)
+                tk.Label(row, text=mark, font=(SANS, 13, "bold"), fg=mcolor, bg=CARD,
+                         width=2).grid(row=0, column=0)
+                tk.Label(row, text=ROLE_LABELS[role], font=(SANS, 12), fg=TXT2, bg=CARD,
+                         width=19, anchor="w").grid(row=0, column=1, sticky="w")
                 if f:
-                    tk.Label(self.rows_frame, text=hex(r["addr"][role]), font=(MONO, 12, "bold"), fg=ACCENT,
-                             bg="#1b2a47", width=9, padx=4, pady=2).grid(row=i, column=2, padx=10)
-                    tk.Label(self.rows_frame, text=os.path.basename(f), font=(SANS, 13, "bold"), fg=TEXT,
-                             bg=CARD, anchor="w").grid(row=i, column=3, sticky="w")
-                    tk.Label(self.rows_frame, text=f"{os.path.getsize(f) / 1024:.0f} KB", font=(SANS, 11),
-                             fg=MUTED, bg=CARD).grid(row=i, column=4, sticky="e", padx=(10, 0))
+                    HexChip(row, "0x%X" % r["addr"][role]).grid(row=0, column=2, padx=10)
+                    tk.Label(row, text=os.path.basename(f), font=(SANS, 13, "bold"), fg=TEXT,
+                             bg=CARD, anchor="w").grid(row=0, column=3, sticky="w")
+                    tk.Label(row, text=f"{os.path.getsize(f) / 1024:.0f} KB", font=(SANS, 11),
+                             fg=MUTED, bg=CARD).grid(row=0, column=4, sticky="e", padx=(10, 0))
                 else:
-                    tk.Label(self.rows_frame, text="", bg=CARD, width=9).grid(row=i, column=2, padx=10)
-                    tk.Label(self.rows_frame, text="no hay archivo" if role != "ota" else "sin archivo (opcional)",
+                    tk.Frame(row, bg=CARD, width=84, height=1).grid(row=0, column=2, padx=10)
+                    tk.Label(row, text="no hay archivo" if role != "ota" else "sin archivo (opcional)",
                              font=(SANS, 12), fg=RED if role != "ota" else MUTED, bg=CARD,
-                             anchor="w").grid(row=i, column=3, sticky="w")
+                             anchor="w").grid(row=0, column=3, sticky="w")
             warn = " ".join(r["warn"])
             if not r["ok"]:
                 warn = ("Falta: " + ", ".join(r["missing"]) + ". " + warn).strip()
@@ -1362,7 +1481,7 @@ class App:
         else:
             self.card_title.config(text=" ")
             tk.Label(self.rows_frame, text="Elige una consola para ver sus archivos.", font=(SANS, 12),
-                     fg=MUTED, bg=CARD).grid(row=0, column=0, pady=4)
+                     fg=MUTED, bg=CARD).pack(pady=4)
             self.prog.look(text="PROGRAMAR", sub=" ")
             self.count_lbl.config(text=" ")
         self.warn_lbl.config(text=warn)
@@ -1528,5 +1647,6 @@ if __name__ == "__main__":
             except Exception:  # noqa: BLE001
                 pass
     r = tk.Tk(className="ReLiveFlasher")
+    r.withdraw()                                 # oculta hasta que la interfaz esté armada
     App(r)
     r.mainloop()
