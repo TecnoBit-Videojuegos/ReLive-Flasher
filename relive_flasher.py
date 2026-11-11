@@ -38,6 +38,11 @@ import urllib.request
 from tkinter import font as tkfont
 
 from serial.tools import list_ports
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+except Exception:
+    pass
 
 try:
     import pty                      # solo Linux/macOS; en Windows se usan tuberías normales
